@@ -231,3 +231,25 @@ class CreditDashboard(BaseModel):
     ]
     subscription_tier: Literal["free", "standard", "pro", "enterprise"]
     lender_profile: Optional[LenderProfile] = None
+
+
+# --- Customer summaries ---
+
+
+class CreditSnapshotSummary(BaseModel):
+    credit_score: int
+    credit_band: str
+    recommended_credit_limit_amount: float
+    recommended_credit_limit_currency: str
+    max_safe_tenor_months: int
+    snapshot_at: str
+
+
+class CustomerSummary(BaseModel):
+    id: int
+    legal_name: str
+    trade_name: Optional[str] = None
+    industry: Optional[str] = None
+    city: Optional[str] = None
+    subscription_plan: Optional[str] = None
+    latest_credit: Optional[CreditSnapshotSummary] = None

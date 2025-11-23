@@ -1,12 +1,15 @@
 import logging
-from typing import Literal, Optional
+from pathlib import Path
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .schemas import CreditDashboard
+from .schemas import CreditDashboard, CustomerSummary
 from .services.credit_agent_service import generate_dashboard_for_customer
+from .services.data_service import list_customers_with_latest_credit
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +60,24 @@ def get_credit_dashboard(
     except Exception as e:
         logger.exception("Failed to generate credit dashboard")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/api/customers",
+    response_model=List[CustomerSummary],
+    summary="List customers with latest credit snapshot",
+)
+def get_customers(db: Session = Depends(get_db)):
+    try:
+        return list_customers_with_latest_credit(db)
+    except Exception:
+        logger.exception("Failed to list customers")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+_DASHBOARD_HTML = (Path(__file__).resolve().parent / "static" / "dashboard.html").read_text()
+
+
+@router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard_page() -> str:
+    return _DASHBOARD_HTML
