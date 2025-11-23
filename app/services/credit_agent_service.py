@@ -1,15 +1,15 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from openai import OpenAI
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import SilkyCreditProfileSnapshot
 from ..schemas import CreditDashboard, LenderProfile
-from pydantic import ValidationError
 from .data_service import fetch_customer_kyc, fetch_usage_metrics, fetch_financial_metrics
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,14 @@ from typing import Any, Dict, List, Tuple
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session
 
-from ..models import Customer, PosTransaction, Invoice, UsageEvent, User
+from ..models import (
+    Customer,
+    PosTransaction,
+    Invoice,
+    UsageEvent,
+    User,
+    SilkyCreditProfileSnapshot,
+)
 
 
 def _get_customer_or_raise(db: Session, customer_id: int) -> Customer:
@@ -201,3 +208,41 @@ def fetch_financial_metrics(db: Session, customer_id: int) -> Dict[str, Any]:
         "revenue_period": revenue_period,
     }
     return financial
+
+
+def list_customers_with_latest_credit(db: Session) -> List[Dict[str, Any]]:
+    customers = db.query(Customer).all()
+
+    results: List[Dict[str, Any]] = []
+    for customer in customers:
+        latest_snapshot: SilkyCreditProfileSnapshot | None = (
+            db.query(SilkyCreditProfileSnapshot)
+            .filter(SilkyCreditProfileSnapshot.customer_id == customer.id)
+            .order_by(SilkyCreditProfileSnapshot.snapshot_at.desc())
+            .first()
+        )
+
+        snapshot_summary: Dict[str, Any] | None = None
+        if latest_snapshot:
+            snapshot_summary = {
+                "credit_score": latest_snapshot.credit_score,
+                "credit_band": latest_snapshot.credit_band,
+                "recommended_credit_limit_amount": latest_snapshot.recommended_credit_limit_amount,
+                "recommended_credit_limit_currency": latest_snapshot.recommended_credit_limit_currency,
+                "max_safe_tenor_months": latest_snapshot.max_safe_tenor_months,
+                "snapshot_at": latest_snapshot.snapshot_at.isoformat(),
+            }
+
+        results.append(
+            {
+                "id": customer.id,
+                "legal_name": customer.legal_name,
+                "trade_name": customer.trade_name,
+                "industry": customer.industry,
+                "city": customer.city,
+                "subscription_plan": customer.settings.subscription_plan if customer.settings else None,
+                "latest_credit": snapshot_summary,
+            }
+        )
+
+    return results
