@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api import router as credit_router
 from app.config import settings
@@ -19,6 +20,8 @@ def create_app() -> FastAPI:
         title=settings.project_name,
         version="2.0.0",
     )
+
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
     app.include_router(credit_router)
 
