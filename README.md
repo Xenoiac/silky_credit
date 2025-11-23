@@ -1,169 +1,92 @@
 # Silky Credit & Behaviour Engine v2.0 (ChatGPT 5.1)
 
-This service powers the **Silky Credit & Behaviour Dashboard** for Silky Systems.
-For any given customer (merchant) it combines:
+The Silky Credit & Behaviour Engine powers the **Silky Credit & Behaviour Dashboard**. For any given merchant it combines KYC details, behaviour and feature adoption, financial health, cashflow forecast, a credit score and band, and prescriptive credit offers into a single `CreditDashboard` JSON payload consumable by Silky's UI and banking partners.
 
-- KYC profile (bank-style)
-- Behavioural usage (activity & feature adoption)
-- Financial health (revenue trends, liquidity, seasonality)
-- Cashflow forecast (base / conservative / optimistic)
-- Credit score & risk band
-- Recommended credit limit and tenor
-- Safety & governance notes
-- Concrete **Credit Offers** per lender policy
-- Early-warning flags and lifecycle monitoring
-- **Improvement actions** for the merchant
-- Segment-aware strengths / risks
-- Audit metadata & simple economics estimates
+- **Tech stack**: FastAPI, SQLAlchemy, Pydantic, OpenAI SDK (Responses API), Uvicorn, SQLite (defaults to SQLite for demos; works with Postgres/MySQL via `DB_URL`).
+- **Model**: Uses the `OPENAI_MODEL` environment variable (defaults to ChatGPT 5.1 family) with structured JSON output.
+- **Seeded demo**: On startup the app creates tables and seeds a sample merchant so you can try the dashboard immediately.
 
-All of this is returned as a single `CreditDashboard` JSON object that the Silky UI,
-merchant portal, and banking partners can consume.
+> Looking for a detailed walkthrough? See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for environment setup, runtime options, and troubleshooting tips.
 
-The engine uses the **OpenAI Python SDK** and the **ChatGPT 5.1 model** (via the
-`OPENAI_MODEL` environment variable) with **structured JSON output**.
+## Core capabilities
 
-## 1. Tech stack
+- **KYC profile**: Bank-style legal and registration details per merchant.
+- **Behavioural analytics**: Activity, feature adoption, discipline, and behavioural risk tracking.
+- **Financial health**: Revenue trends, liquidity proxies, seasonality, and profitability proxies.
+- **Cashflow forecast**: Base, conservative, and optimistic scenarios with drivers.
+- **Credit intelligence**: Credit score, risk band, limit/tenor recommendation, and offer suggestions.
+- **Governance**: Safety and compliance flags plus audit metadata for every generated dashboard.
 
-- Python 3.11+
-- FastAPI
-- SQLAlchemy (ORM)
-- Pydantic models (for schemas)
-- OpenAI SDK (`openai`) using the Responses API
-- Uvicorn (ASGI server)
-- SQLite by default (easy demo) – production can point to MySQL/Postgres via `DB_URL`
+## Quickstart
 
-## 2. Setup
+1. **Install dependencies**
 
-### 2.1. Create and activate virtualenv (optional but recommended)
+   ```bash
+   python -m venv venv && source venv/bin/activate  # optional but recommended
+   pip install -r requirements.txt
+   ```
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+2. **Set environment variables**
 
-### 2.2. Install dependencies
+   Copy the starter file and fill values:
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   cp .env.example .env
+   ```
 
-### 2.3. Environment variables
+   Key fields:
+   - `ENV`: `dev` or `prod`
+   - `DB_URL`: SQLAlchemy DSN (e.g., `sqlite:///./silky_credit.db` for demos)
+   - `OPENAI_API_KEY`: your OpenAI key
+   - `OPENAI_MODEL`: e.g., `gpt-5.1` or a compatible reasoning model
+   - `LOG_LEVEL`: log verbosity (e.g., `INFO`, `DEBUG`)
 
-Copy `.env.example` to `.env` and fill values:
+3. **Run the API server**
 
-```bash
-cp .env.example .env
-```
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
 
-Important fields:
+   Startup automatically creates the schema and seeds demo data when the database is empty.
 
-- `ENV` – `dev` or `prod`
-- `DB_URL` – SQLAlchemy DSN, e.g.
+4. **Call the API**
 
-  ```text
-  sqlite:///./silky_credit.db
+   - Internal analytics view:
+
+     ```bash
+     curl "http://localhost:8000/api/credit-dashboard/1?viewer_type=silky_internal"
+     ```
+
+   - Bank partner view (with lender context):
+
+     ```bash
+     curl "http://localhost:8000/api/credit-dashboard/1?viewer_type=bank_partner&lender_id=SAB"
+     ```
+
+   Both return the `CreditDashboard` JSON contract defined in [`app/schemas.py`](app/schemas.py).
+
+## Development & testing
+
+- **Run tests**:
+
+  ```bash
+  pytest
   ```
 
-  or for MySQL:
+- **Code layout**:
+  - `main.py`: FastAPI application factory and startup hooks.
+  - `app/api.py`: Routes for generating credit dashboards.
+  - `app/models.py` & `app/db.py`: SQLAlchemy models and engine/session setup.
+  - `app/services/`: Domain services that assemble dashboard data.
+  - `app/seed_db.py`: Demo data seeding on startup.
 
-  ```text
-  mysql+pymysql://silky_user:super_secret@127.0.0.1:3306/silky_main
-  ```
+## Safety & governance
 
-- `OPENAI_API_KEY` – your OpenAI API key.
-- `OPENAI_MODEL` – e.g. `gpt-5.1` (or any compatible reasoning model)
+- The prompt and schema explicitly forbid using protected attributes (religion, gender, nationality, ethnicity) in scoring.
+- `safety_and_compliance` and `audit_metadata` sections capture why a score was produced and how it should be governed.
+- Each call stores a snapshot table (`silky_credit_profile_snapshots`) so you can monitor drift, overrides, and lifecycle events.
 
-### 2.4. Database
+## Additional documentation
 
-By default the service uses SQLite and automatically creates and seeds a demo DB at startup.
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) – detailed environment setup, running locally, API examples, and troubleshooting.
 
-Tables include (simplified):
-
-- `customers`
-- `customer_settings`
-- `users`
-- `usage_events`
-- `pos_transactions`
-- `invoices`
-- `silky_credit_profile_snapshots` (for history / monitoring)
-
-The seed script inserts **one demo merchant (customer_id=1)** with:
-
-- F&B QSR business in Riyadh
-- 12 months of POS revenue
-- A few invoices and usage events
-
-This is enough to demo the full pipeline.
-
-## 3. Running the service
-
-### 3.1. Run with Uvicorn (dev)
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-On startup the app will:
-
-- Create all tables.
-- Seed demo data if the DB is empty.
-
-### 3.2. Call the API
-
-Example (internal analytics view):
-
-```bash
-curl "http://localhost:8000/api/credit-dashboard/1?viewer_type=silky_internal"
-```
-
-Example (bank partner view with simple lender id):
-
-```bash
-curl "http://localhost:8000/api/credit-dashboard/1?viewer_type=bank_partner&lender_id=SAB"
-```
-
-### 3.3. Response
-
-You will get back a `CreditDashboard` JSON object with:
-
-- KYC & behaviour sections
-- Financial health & cashflow
-- Credit score, band, recommended limit & tenor
-- Credit offers for the lender
-- Early-warning flags & lifecycle recommendations
-- Improvement actions for the merchant
-- Segment-specific commentary
-- Audit metadata & basic economics
-
-## 4. Integrating with Silky UI
-
-Use your frontend stack (Vue/React) to call:
-
-```http
-GET /api/credit-dashboard/{customer_id}?viewer_type=silky_internal
-```
-
-Treat the response as the canonical `CreditDashboard` contract (see `app/schemas.py`).
-
-You can render:
-
-- KYC cards
-- Behaviour cards
-- Financial & cashflow charts
-- Credit score & offers panel
-- Flags and recommendations
-
-## 5. Production notes
-
-- In **prod**, point `DB_URL` to your analytics or OLTP database.
-- Replace the seed data with real Silky data or an ETL pipeline.
-- Optionally restrict the endpoint behind auth and role-based access.
-
-## 6. Safety & governance
-
-- The agent prompt **forbids** using protected attributes (religion, gender,
-  nationality, ethnicity) in scoring.
-- The `CreditDashboard` includes `safety_and_compliance` and `audit_metadata`
-  sections for model governance and audits.
-- Every call stores a snapshot in `silky_credit_profile_snapshots` so you can
-  monitor score drift, overrides, and decisions over time.
