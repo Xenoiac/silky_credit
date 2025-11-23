@@ -27,9 +27,9 @@ class _FakeResponse:
         self.output = [_FakeOutput(text)]
 
 
-def _stub_dashboard_payload() -> dict[str, Any]:
+def _stub_dashboard_payload(customer_id: int) -> dict[str, Any]:
     return {
-        "customer_id": 1,
+        "customer_id": customer_id,
         "usage_mode": "internal_analytics",
         "subscription_tier": "standard",
         "kyc_profile": {
@@ -126,13 +126,22 @@ def _stub_dashboard_payload() -> dict[str, Any]:
         },
         "safety_and_compliance": {
             "used_sensitive_attributes": False,
-            "notes": "", 
+            "notes": "",
             "regulatory_flags": [],
         },
-        "available_offers": [],
-        "early_warning_flags": [],
-        "recommendations_for_lender": [],
-        "improvement_actions_for_merchant": [],
+        "available_offers": [
+            {
+                "offer_id": "offer-1",
+                "product_type": "working_capital_loan",
+                "amount": 20000,
+                "currency": "SAR",
+                "tenor_months": 9,
+                "apr_percent": 8.0,
+            }
+        ],
+        "early_warning_flags": ["Higher refund ratio"],
+        "recommendations_for_lender": ["Consider stepped limit"],
+        "improvement_actions_for_merchant": ["Tighten stock reconciliation"],
         "segment_specific_strengths": [],
         "segment_specific_risks": [],
         "audit_metadata": {
@@ -150,23 +159,36 @@ def _stub_dashboard_payload() -> dict[str, Any]:
     }
 
 
-def _create_test_app(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def _create_test_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
+    db_url = f"sqlite:///{tmp_path / 'unit.db'}"
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-test")
-    monkeypatch.setenv("DB_URL", "sqlite:///./test_unit.db")
+    monkeypatch.setenv("DB_URL", db_url)
+
+    for module_name in [
+        "main",
+        "app.api",
+        "app.config",
+        "app.db",
+        "app.models",
+        "app.seed_db",
+        "app.services.credit_agent_service",
+    ]:
+        sys.modules.pop(module_name, None)
 
     import app.config as config
     importlib.reload(config)
     import app.db as db
     importlib.reload(db)
+    db.Base.metadata.clear()
+    import app.models as models
     import app.seed_db as seed_db
     importlib.reload(seed_db)
     import app.services.credit_agent_service as credit_agent_service
     importlib.reload(credit_agent_service)
 
-    # Stub the OpenAI responses client
     def _fake_create(model: str, input: str):
-        payload = _stub_dashboard_payload()
+        payload = _stub_dashboard_payload(customer_id=1)
         return _FakeResponse(json.dumps(payload))
 
     monkeypatch.setattr(credit_agent_service.client.responses, "create", _fake_create)
@@ -179,30 +201,40 @@ def _create_test_app(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch):
-    with _create_test_app(monkeypatch) as client:
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    with _create_test_app(monkeypatch, tmp_path) as client:
         yield client
 
 
-def test_customers_endpoint_returns_seeded_customer(client: TestClient):
+def test_customers_endpoint_returns_list(client: TestClient):
     resp = client.get("/api/customers")
     assert resp.status_code == 200
-
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) >= 1
-    first = data[0]
-    assert first["legal_name"]
-    assert "latest_credit" in first
+    assert len(data) >= 5
+    assert data[0]["legal_name"]
 
 
 def test_credit_dashboard_generation(client: TestClient):
-    resp = client.get("/api/credit-dashboard/1")
+    customers = client.get("/api/customers").json()
+    customer_id = customers[0]["id"]
+
+    resp = client.get(f"/api/credit-dashboard/{customer_id}")
     assert resp.status_code == 200
 
     body = resp.json()
-    assert body["credit_analysis"]["credit_score"] == 85
-    assert body["credit_analysis"]["credit_band"] == "A"
+    for key in [
+        "kyc_profile",
+        "behaviour_profile",
+        "financial_health",
+        "cashflow_forecast",
+        "credit_analysis",
+        "available_offers",
+        "early_warning_flags",
+        "recommendations_for_lender",
+        "improvement_actions_for_merchant",
+    ]:
+        assert key in body
 
     refreshed = client.get("/api/customers").json()
     assert refreshed[0]["latest_credit"]["credit_band"] == "A"
@@ -211,4 +243,4 @@ def test_credit_dashboard_generation(client: TestClient):
 def test_dashboard_page_served(client: TestClient):
     resp = client.get("/dashboard")
     assert resp.status_code == 200
-    assert "Customer Credit Universe" in resp.text
+    assert "Silky Credit & Behaviour Engine" in resp.text

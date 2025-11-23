@@ -1,6 +1,9 @@
 import json
 import logging
 from datetime import datetime
+import json
+import logging
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from openai import OpenAI
@@ -250,6 +253,44 @@ def _coerce_model_output(data: Dict[str, Any]) -> None:
             data.pop(key, None)
 
 
+def _get_cached_dashboard(
+    db: Session,
+    customer_id: int,
+    viewer_type: str,
+    usage_mode: str,
+    subscription_tier: str,
+    lender_id: Optional[str],
+) -> Optional[CreditDashboard]:
+    """Return a cached snapshot if one already exists for this view."""
+
+    lender_clause = (
+        SilkyCreditProfileSnapshot.lender_id.is_(None)
+        if lender_id is None
+        else SilkyCreditProfileSnapshot.lender_id == lender_id
+    )
+
+    snapshot = (
+        db.query(SilkyCreditProfileSnapshot)
+        .filter(
+            SilkyCreditProfileSnapshot.customer_id == customer_id,
+            SilkyCreditProfileSnapshot.viewer_type == viewer_type,
+            SilkyCreditProfileSnapshot.usage_mode == usage_mode,
+            SilkyCreditProfileSnapshot.subscription_tier == subscription_tier,
+            lender_clause,
+        )
+        .order_by(SilkyCreditProfileSnapshot.snapshot_at.desc())
+        .first()
+    )
+
+    if not snapshot:
+        return None
+
+    try:
+        return CreditDashboard.model_validate_json(snapshot.dashboard_json)
+    except ValidationError:
+        return None
+
+
 def generate_dashboard_for_customer(
     db: Session,
     customer_id: int,
@@ -274,6 +315,22 @@ def generate_dashboard_for_customer(
 
     resolved_usage_mode = _derive_usage_mode(viewer_type, usage_mode)
     resolved_subscription_tier = _infer_subscription_tier(subscription_tier, kyc)
+
+    cached = _get_cached_dashboard(
+        db=db,
+        customer_id=customer_id,
+        viewer_type=viewer_type,
+        usage_mode=resolved_usage_mode,
+        subscription_tier=resolved_subscription_tier,
+        lender_id=lender_id,
+    )
+    if cached:
+        logger.info(
+            "Returning cached dashboard for customer_id=%s viewer_type=%s",
+            customer_id,
+            viewer_type,
+        )
+        return cached
 
     segment = kyc.get("segment")
     lender_profile = _build_lender_profile(lender_id, segment)

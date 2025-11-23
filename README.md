@@ -4,9 +4,40 @@ The Silky Credit & Behaviour Engine powers the **Silky Credit & Behaviour Dashbo
 
 - **Tech stack**: FastAPI, SQLAlchemy, Pydantic, OpenAI SDK (Responses API), Uvicorn, SQLite (defaults to SQLite for demos; works with Postgres/MySQL via `DB_URL`).
 - **Model**: Uses the `OPENAI_MODEL` environment variable (defaults to ChatGPT 5.1 family) with structured JSON output.
-- **Seeded demo**: On startup the app creates tables and seeds a sample merchant so you can try the dashboard immediately.
+- **Seeded demo**: On startup the app creates tables and seeds multiple sample merchants so you can try the dashboard immediately.
 
 > Looking for a detailed walkthrough? See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for environment setup, runtime options, and troubleshooting tips.
+
+## How to run locally
+
+**Requirements**: Python 3.10+, `pip`, and optionally `virtualenv`/`venv`.
+
+1. Create and activate a virtual environment (recommended):
+
+   ```bash
+   python -m venv venv && source venv/bin/activate
+   # On Windows: python -m venv venv && venv\Scripts\activate
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Set environment variables:
+
+   - `OPENAI_API_KEY` (required)
+   - `OPENAI_MODEL` (optional, defaults to `gpt-5.1`)
+   - `DB_URL` (optional, defaults to local SQLite; if unavailable the app will fall back to `sqlite:///./silky_credit.db` and seed demo data)
+
+4. Run the app:
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+5. Open the dashboard UI at http://127.0.0.1:8000/dashboard and click through the sample customers. If no external DB is configured, the app automatically provisions a demo SQLite database with multiple merchants and usage patterns.
 
 ## Core capabilities
 
